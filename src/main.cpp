@@ -1,204 +1,312 @@
-#include "main.h"
-#include "preview.h"
-#include <cstring>
+#define GLM_FORCE_RADIANS
+#include <glm/glm.hpp>
 
-static std::string startTimeString;
+#include <GL/glew.h>
+#ifdef _WIN32
+#define GLFW_DLL
+#endif
+#include <GLFW/glfw3.h>
 
-// For camera controls
-static bool leftMousePressed = false;
-static bool rightMousePressed = false;
-static bool middleMousePressed = false;
-static double lastX;
-static double lastY;
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <deque>
 
-static bool camchanged = true;
-static float dtheta = 0, dphi = 0;
-static glm::vec3 cammove;
+#include <src/util.hpp>
+#include <src/scene.hpp>
 
-float zoom, theta, phi;
-glm::vec3 cameraPosition;
-glm::vec3 ogLookAt; // for recentering the camera
+#include <pthread.h>
 
+#ifndef PI
+#define PI 3.14169265358979f
+#endif
+
+// Standard glut-based program functions
+void init(void);
+void resize(GLFWwindow*, int, int);
+void keypress(GLFWwindow*, int, int, int, int);
+void mousepos(GLFWwindow*, double, double);
+void scroll(GLFWwindow*, double, double);
+
+// scene graph
+std::deque<std::string> nodeList;
 Scene *scene;
-RenderState *renderState;
-int iteration;
+int xSize = 640, ySize = 480;
 
-int width;
-int height;
-
-//-------------------------------
-//-------------MAIN--------------
-//-------------------------------
-
-int main(int argc, char** argv) {
-    startTimeString = currentTimeString();
-
-    if (argc < 2) {
-        printf("Usage: %s SCENEFILE.txt\n", argv[0]);
-        return 1;
-    }
-
-    const char *sceneFile = argv[1];
-
-    // Load scene file
-    scene = new Scene(sceneFile);
-
-    // Set up camera stuff from loaded path tracer settings
-    iteration = 0;
-    renderState = &scene->state;
-    Camera &cam = renderState->camera;
-    width = cam.resolution.x;
-    height = cam.resolution.y;
-
-    glm::vec3 view = cam.view;
-    glm::vec3 up = cam.up;
-    glm::vec3 right = glm::cross(view, up);
-    up = glm::cross(right, view);
-
-    cameraPosition = cam.position;
-
-    // compute phi (horizontal) and theta (vertical) relative 3D axis
-    // so, (0 0 1) is forward, (0 1 0) is up
-    glm::vec3 viewXZ = glm::vec3(view.x, 0.0f, view.z);
-    glm::vec3 viewZY = glm::vec3(0.0f, view.y, view.z);
-    phi = glm::acos(glm::dot(glm::normalize(viewXZ), glm::vec3(0, 0, -1)));
-    theta = glm::acos(glm::dot(glm::normalize(viewZY), glm::vec3(0, 1, 0)));
-    ogLookAt = cam.lookAt;
-    zoom = glm::length(cam.position - ogLookAt);
-
-    // Initialize CUDA and GL components
-    init();
-
-    // GLFW main loop
-    mainLoop();
-
-    return 0;
+pthread_t render_thread;
+static bool render_allowed = true;
+double render_t0, render_t1;
+void *render_worker(void *data) {
+  render_t0 = clock();
+  scene->raytrace();
+  render_t1 = clock();
+  render_allowed = true;
+  printf("render finished (%.3f s)\n", (render_t1-render_t0)/CLOCKS_PER_SEC);
 }
 
-void saveImage() {
-    float samples = iteration;
-    // output image file
-    image img(width, height);
-
-    for (int x = 0; x < width; x++) {
-        for (int y = 0; y < height; y++) {
-            int index = x + (y * width);
-            glm::vec3 pix = renderState->image[index];
-            img.setPixel(width - 1 - x, y, glm::vec3(pix) / samples);
-        }
+int main(int argc, char** argv)
+{
+    if(argc < 2) {
+      std::cerr << "usage: " << argv[0] << " " << "config\n";
+      return EXIT_FAILURE;
     }
 
-    std::string filename = renderState->imageName;
-    std::ostringstream ss;
-    ss << filename << "." << startTimeString << "." << samples << "samp";
-    filename = ss.str();
+    if(!glfwInit())
+      exit(EXIT_FAILURE);
+    GLFWwindow* window = glfwCreateWindow(xSize, ySize, "Scene Graph", NULL, NULL);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+    glfwMakeContextCurrent(window);
 
-    // CHECKITOUT
-    img.savePNG(filename);
-    //img.saveHDR(filename);  // Save a Radiance HDR file
-}
+    glewInit();
 
-void runCuda() {
-    if (camchanged) {
-        iteration = 0;
-        Camera &cam = renderState->camera;
-        cameraPosition.x = zoom * sin(phi) * sin(theta);
-        cameraPosition.y = zoom * cos(theta);
-        cameraPosition.z = zoom * cos(phi) * sin(theta);
+    // Set the color which clears the screen between frames
+    glClearColor(0, 0, 0, 1);
 
-        cam.view = -glm::normalize(cameraPosition);
-        glm::vec3 v = cam.view;
-        glm::vec3 u = glm::vec3(0, 1, 0);//glm::normalize(cam.up);
-        glm::vec3 r = glm::cross(v, u);
-        cam.up = glm::cross(r, v);
-        cam.right = r;
+    // Enable and clear the depth buffer
+    glEnable(GL_DEPTH_TEST);
+    glClearDepth(1.0);
+    glDepthFunc(GL_LEQUAL);
 
-        cam.position = cameraPosition;
-        cameraPosition += cam.lookAt;
-        cam.position = cameraPosition;
-        camchanged = false;
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // initialize the scene
+    std::ifstream in(argv[1]);
+    if(!in) {
+      std::cout << "couldn't open config " << argv[1] << "\n";
+      return EXIT_FAILURE;
+    }
+    Config sceneConf(in);
+    scene = new Scene(sceneConf);
+    in.close();
+
+    // get the render order
+    nodeList = scene->nodeList();
+    if(nodeList.size() > 0) {
+      std::string sel = nodeList.front();
+      scene->bindShader(sel, "contour");
+    }
+
+    glfwSetWindowSizeCallback(window, resize);
+    glfwSetKeyCallback(window, keypress);
+    glfwSetCursorPosCallback(window, mousepos);
+    glfwSetScrollCallback(window, scroll);
+
+    int nbFrames = 0;
+    double lastTime = glfwGetTime();
+    while(!glfwWindowShouldClose(window)) {
+
+      // Clear the screen so that we only see newly drawn images
+      glfwSetCursorPos(window, xSize/2, ySize/2);
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+      scene->draw("diffuse");
+      scene->draw("contour");
+
+      // Move the rendering we just made onto the screen
+      glfwSwapBuffers(window);
+      glfwPollEvents();
+
+      double currentTime = glfwGetTime();
+      nbFrames++;
+      if (currentTime - lastTime >= 1.0){
+         std::cout << "\r" <<  1000.0/double(nbFrames) << std::flush;
+         nbFrames = 0;
+         lastTime += 1.0;
       }
 
-    // Map OpenGL buffer object for writing from CUDA on a single GPU
-    // No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
-
-    if (iteration == 0) {
-        pathtraceFree();
-        pathtraceInit(scene);
+      // Check for any GL errors that have happened recently
+      printGLErrorLog();
     }
 
-    if (iteration < renderState->iterations) {
-        uchar4 *pbo_dptr = NULL;
-        iteration++;
-        cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
+    pthread_join(render_thread, NULL);
+    glfwDestroyWindow(window);
+    glfwTerminate();
+    delete scene;
 
-        // execute the kernel
-        int frame = 0;
-        pathtrace(pbo_dptr, frame, iteration);
-
-        // unmap buffer object
-        cudaGLUnmapBufferObject(pbo);
-    } else {
-        saveImage();
-        pathtraceFree();
-        cudaDeviceReset();
-        exit(EXIT_SUCCESS);
-    }
+    return EXIT_SUCCESS;
 }
 
-void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    if (action == GLFW_PRESS) {
-      switch (key) {
-      case GLFW_KEY_ESCAPE:
-        saveImage();
-        glfwSetWindowShouldClose(window, GL_TRUE);
-        break;
-      case GLFW_KEY_S:
-        saveImage();
-        break;
-      case GLFW_KEY_SPACE:
-        camchanged = true;
-        renderState = &scene->state;
-        Camera &cam = renderState->camera;
-        cam.lookAt = ogLookAt;
-        break;
+void keypress(GLFWwindow* window, int key, int code, int action, int mods) {
+  if(!(mods & GLFW_MOD_SHIFT) && isalpha(key))
+    key += 32;
+  if(action != GLFW_PRESS && action != GLFW_REPEAT)
+    return;
+  std::string sel;
+  switch(key) {
+    case 'q':
+      pthread_join(render_thread, NULL);
+      exit(0);
+      break;
+    case 'n':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->unbindShader(sel, "contour");
+      nodeList.pop_front();
+      nodeList.push_back(sel);
+      sel = nodeList.front();
+      scene->bindShader(sel, "contour");
+      break;
+    case 'a':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->translate(sel, glm::vec3(-.5,0,0));
+      break;
+    case 'd':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->translate(sel, glm::vec3(.5,0,0));
+      break;
+    case 'w':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->translate(sel, glm::vec3(0,.5,0));
+      break;
+    case 's':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->translate(sel, glm::vec3(0,-.5,0));
+      break;
+    case 'e':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->translate(sel, glm::vec3(0,0,.5));
+      break;
+    case 'r':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->translate(sel, glm::vec3(0,0,-.5));
+      break;
+    case 'x':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->scale(sel, glm::vec3(.5,0,0));
+      break;
+    case 'X':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->scale(sel, glm::vec3(-.5,0,0));
+      break;
+    case 'y':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->scale(sel, glm::vec3(0,.5,0));
+      break;
+    case 'Y':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->scale(sel, glm::vec3(0,-.5,0));
+      break;
+    case 'z':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->scale(sel, glm::vec3(0,0,.5));
+      break;
+    case 'Z':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->scale(sel, glm::vec3(0,0,-.5));
+      break;
+    case 'j':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->rotate(sel, glm::vec3(PI/18,0,0));
+      break;
+    case 'J':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->rotate(sel, glm::vec3(-PI/18,0,0));
+      break;
+    case 'k':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->rotate(sel, glm::vec3(0,PI/18,0));
+      break;
+    case 'K':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->rotate(sel, glm::vec3(0,-PI/18,0));
+      break;
+    case 'l':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->rotate(sel, glm::vec3(0,0,PI/18));
+      break;
+    case 'L':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->rotate(sel, glm::vec3(0,0,-PI/18));
+      break;
+    case 'f':
+      scene->moveLight(glm::vec3(.5,0,0));
+      break;
+    case 'F':
+      scene->moveLight(glm::vec3(-.5,0,0));
+      break;
+    case 'g':
+      scene->moveLight(glm::vec3(0,.5,0));
+      break;
+    case 'G':
+      scene->moveLight(glm::vec3(0,-.5,0));
+      break;
+    case 'h':
+      scene->moveLight(glm::vec3(0,0,.5));
+      break;
+    case 'H':
+      scene->moveLight(glm::vec3(0,0,-.5));
+      break;
+    case 'u':
+      if(!nodeList.size())
+        return;
+      sel = nodeList.front();
+      scene->delNode(sel);
+      nodeList = scene->nodeList();
+      if(nodeList.size()) {
+        sel = nodeList.front();
+        scene->bindShader(sel, "contour");
       }
-    }
+      break;
+    case 'p':
+      if (render_allowed) {
+        printf("attempt\n");
+        pthread_create(&render_thread, NULL, render_worker, NULL);
+        render_allowed = false;
+      }
+      break;
+  }
 }
 
-void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-  leftMousePressed = (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS);
-  rightMousePressed = (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS);
-  middleMousePressed = (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_PRESS);
+void resize(GLFWwindow* window, int width, int height)
+{
+  xSize = width;
+  ySize = height;
+  scene->resize(width,height);
 }
 
-void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
-  if (leftMousePressed) {
-    // compute new camera parameters
-    phi -= (xpos - lastX) / width;
-    theta -= (ypos - lastY) / height;
-    theta = std::fmax(0.001f, std::fmin(theta, PI));
-    camchanged = true;
-  }
-  else if (rightMousePressed) {
-    zoom += (ypos - lastY) / height;
-    zoom = std::fmax(0.1f, zoom);
-    camchanged = true;
-  }
-  else if (middleMousePressed) {
-    renderState = &scene->state;
-    Camera &cam = renderState->camera;
-    glm::vec3 forward = cam.view;
-    forward.y = 0.0f;
-    forward = glm::normalize(forward);
-    glm::vec3 right = cam.right;
-    right.y = 0.0f;
-    right = glm::normalize(right);
+void mousepos(GLFWwindow* window, double xpos, double ypos) {
+  scene->moveMouse(xpos,ypos);
+  //glfwSetCursorPos(window, xSize/2, ySize/2);
+}
 
-    cam.lookAt -= (float) (xpos - lastX) * right * 0.01f;
-    cam.lookAt += (float) (ypos - lastY) * forward * 0.01f;
-    camchanged = true;
-  }
-  lastX = xpos;
-  lastY = ypos;
+void scroll(GLFWwindow*, double dx, double dy) {
+  scene->zoom(dy);
 }
