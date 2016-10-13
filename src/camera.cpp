@@ -64,9 +64,9 @@ void Camera::resize(int w, int h) {
 
 void Camera::zoom(float dy) {
   float r = 1.0 - 2.0*dy/height;
-  yFov *= r;
-  if(yFov > PI/4)
-    yFov = PI/4;
+    yFov *= r;
+  if(yFov > PI/3)
+    yFov = PI/3;
   if(yFov < PI/6)
     yFov = PI/6;
   std::cout << std::setprecision(2) << std::fixed;
@@ -75,10 +75,12 @@ void Camera::zoom(float dy) {
 
 void Camera::rotate(float xpos, float ypos, float dt) {
 
-  float dx = float(width/2 - xpos) / width;
-  float dy = float(height/2 - ypos) / height;
-  xvAngle += .5*dx;
-  yvAngle += .5*dy;
+  float dx = float(xpos) * dt / width;
+  float dy = float(ypos) * dt / height;
+  xvAngle += dx;
+  yvAngle += dy;
+
+  printf("%f %f\n", dx, dy);
 
   if(xvAngle > PI + PI/3)
     xvAngle = PI + PI/3;
@@ -89,18 +91,16 @@ void Camera::rotate(float xpos, float ypos, float dt) {
   if(yvAngle < -PI/4)
     yvAngle = -PI/4;
 
+  printf("%f %f\n", xvAngle*180.0f/M_PI, yvAngle*180.0f/M_PI);
+
   float len = glm::length(fwd);
   fwd = len*glm::vec3(
     cos(yvAngle) * sin(xvAngle),
     sin(yvAngle),
     cos(yvAngle) * cos(xvAngle)
   );
-  glm::vec3 right = glm::vec3(
-    sin(xvAngle - PI/2),
-    0,
-    cos(xvAngle - PI/2)
-  );
-  up = glm::cross(right, fwd);
+  up = glm::vec3(0.0f,1.0f,0.0f);
+  glm::vec3 right = glm::cross(right, glm::normalize(fwd));
 }
 
 void Camera::bind(Shader *shader) {

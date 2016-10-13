@@ -341,7 +341,7 @@ void Scene::moveLight(glm::vec3 dv) {
 }
 
 void Scene::moveMouse(float xpos, float ypos) {
-  camera->rotate(xpos, ypos, .1);
+  camera->rotate(xpos, ypos, 1);
 }
 
 void Scene::raytrace() {

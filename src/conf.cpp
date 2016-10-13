@@ -16,7 +16,7 @@ void Config::config(std::istream& inFile) {
   std::string param;
   inFile >> param;
   while(inFile) {
-    if(param == "NODE") {
+    if(param == "OBJECT") {
       NodeConf nc;
       param = config(inFile, nc);
       nodes.push_back(nc);
@@ -44,7 +44,7 @@ void Config::config(std::istream& inFile) {
       textures.push_back(tc);
     }
 
-    else if(param == "MAT") {
+    else if(param == "MATERIAL") {
       MatConf mc;
       param = config(inFile, mc);
       materials.push_back(mc);
@@ -130,7 +130,7 @@ std::string Config::config(std::istream& inFile, CameraConf& conf) {
       inFile >> conf.outFile;
     else if(param == "AMBIENT")
       inFile >> conf.ambient;
-    else if(param == "ITER")
+    else if(param == "DEPTH")
       inFile >> conf.rayIter;
     else if(param == "LSAMP")
       inFile >> conf.lSamp;
@@ -171,14 +171,14 @@ std::string Config::config(std::istream& inFile, NodeConf& conf) {
   while(inFile >> param) {
     if(param == "PARENT") {
       inFile >> conf.parentName;
-    } else if(param == "TRANSLATION") {
+    } else if(param == "TRANS") {
       inFile >> conf.tx;
-    } else if(param == "ROTATION") {
+    } else if(param == "ROTAT") {
       inFile >> conf.rot;
       conf.rot *= PI/180.f;
     } else if(param == "SCALE") {
       inFile >> conf.scale;
-    } else if(param == "MAT") {
+    } else if(param == "MATERIAL") {
       inFile >> conf.matName;
     } else if(param == "CENTER") {
       inFile >> conf.ctr;
@@ -239,31 +239,31 @@ std::string Config::config(std::istream& inFile, MatConf& conf) {
 
   std::string param;
   while(inFile >> param) {
-    if(param == "DIFF") {
+    if(param == "RGB") {
       inFile >> conf.diffCol;
     }
 
-    else if(param == "REFL") {
+    else if(param == "SPECRGB") {
       inFile >> conf.specCol;
     }
 
-    else if(param == "EXPO") {
+    else if(param == "SPECX") {
       inFile >> conf.specExp;
     }
 
-    else if(param == "IOR") {
+    else if(param == "REFRIOR") {
       inFile >> conf.ior;
     }
 
-    else if(param == "MIRR") {
+    else if(param == "REFL") {
       inFile >> conf.mirr;
     }
 
-    else if(param == "TRAN") {
+    else if(param == "REFR") {
       inFile >> conf.trans;
     }
 
-    else if(param == "EMIT") {
+    else if(param == "EMITTANCE") {
       inFile >> conf.lEmit;
     }
 

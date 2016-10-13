@@ -134,157 +134,11 @@ void keypress(GLFWwindow* window, int key, int code, int action, int mods) {
     return;
   std::string sel;
   switch(key) {
+    case GLFW_KEY_ESCAPE:
     case 'q':
-      pthread_join(render_thread, NULL);
       exit(0);
       break;
-    case 'n':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->unbindShader(sel, "contour");
-      nodeList.pop_front();
-      nodeList.push_back(sel);
-      sel = nodeList.front();
-      scene->bindShader(sel, "contour");
-      break;
-    case 'a':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->translate(sel, glm::vec3(-.5,0,0));
-      break;
-    case 'd':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->translate(sel, glm::vec3(.5,0,0));
-      break;
-    case 'w':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->translate(sel, glm::vec3(0,.5,0));
-      break;
     case 's':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->translate(sel, glm::vec3(0,-.5,0));
-      break;
-    case 'e':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->translate(sel, glm::vec3(0,0,.5));
-      break;
-    case 'r':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->translate(sel, glm::vec3(0,0,-.5));
-      break;
-    case 'x':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->scale(sel, glm::vec3(.5,0,0));
-      break;
-    case 'X':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->scale(sel, glm::vec3(-.5,0,0));
-      break;
-    case 'y':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->scale(sel, glm::vec3(0,.5,0));
-      break;
-    case 'Y':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->scale(sel, glm::vec3(0,-.5,0));
-      break;
-    case 'z':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->scale(sel, glm::vec3(0,0,.5));
-      break;
-    case 'Z':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->scale(sel, glm::vec3(0,0,-.5));
-      break;
-    case 'j':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->rotate(sel, glm::vec3(PI/18,0,0));
-      break;
-    case 'J':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->rotate(sel, glm::vec3(-PI/18,0,0));
-      break;
-    case 'k':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->rotate(sel, glm::vec3(0,PI/18,0));
-      break;
-    case 'K':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->rotate(sel, glm::vec3(0,-PI/18,0));
-      break;
-    case 'l':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->rotate(sel, glm::vec3(0,0,PI/18));
-      break;
-    case 'L':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->rotate(sel, glm::vec3(0,0,-PI/18));
-      break;
-    case 'f':
-      scene->moveLight(glm::vec3(.5,0,0));
-      break;
-    case 'F':
-      scene->moveLight(glm::vec3(-.5,0,0));
-      break;
-    case 'g':
-      scene->moveLight(glm::vec3(0,.5,0));
-      break;
-    case 'G':
-      scene->moveLight(glm::vec3(0,-.5,0));
-      break;
-    case 'h':
-      scene->moveLight(glm::vec3(0,0,.5));
-      break;
-    case 'H':
-      scene->moveLight(glm::vec3(0,0,-.5));
-      break;
-    case 'u':
-      if(!nodeList.size())
-        return;
-      sel = nodeList.front();
-      scene->delNode(sel);
-      nodeList = scene->nodeList();
-      if(nodeList.size()) {
-        sel = nodeList.front();
-        scene->bindShader(sel, "contour");
-      }
-      break;
     case 'p':
       if (render_allowed) {
         printf("attempt\n");
@@ -302,9 +156,11 @@ void resize(GLFWwindow* window, int width, int height)
   scene->resize(width,height);
 }
 
+static double lastX, lastY;
 void mousepos(GLFWwindow* window, double xpos, double ypos) {
-  scene->moveMouse(xpos,ypos);
-  //glfwSetCursorPos(window, xSize/2, ySize/2);
+  scene->moveMouse(xpos-lastX,ypos-lastY);
+  lastX = xpos;
+  lastY = ypos;
 }
 
 void scroll(GLFWwindow*, double dx, double dy) {
