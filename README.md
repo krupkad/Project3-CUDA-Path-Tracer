@@ -26,23 +26,27 @@ Additionally, I implemented some extra features and improvements.
 # Results
 
 ![Cornell Box](img/cornell.png "Cornell Box")
+
 ## Base features
 The CUDA-accelerated path tracer performed much faster than the CPU version, as expected. Though I did not run CPU tests,
 similar scenes generally took minutes where the GPU version takes seconds.
 
 
 ![First-Bounce caching comparison](img/cache.png "First-Bounce caching comparison")
+
 As expected, caching the first ray intersection did produce a performance gain, but this diminished as the maximum
 number of bounces increased. These tests were conducted on the Cornell box seen above.
 
 ## Extra features
 ![DOF](img/dof.png "Depth of Field")
+
 Depth of field is physically realistic, and achieved by a "DENSITY N" and "APERTURE R" parameters in the CAMERA section, which
 causes the ray origins to be jittered N^2 times within an aperture of radius R. This leads to a slow-down equivalent to
 having N^2 times as many rays.
 
 ![Cow](img/cow.png "Arbitrary meshes")
 ![Teapot](img/teapot.png "Arbitrary meshes")
+
 The tracer supports loading arbitrary meshes from a standard .obj file, by setting "SHAPE mesh"
 and FILE file.obj" in an OBJECT section. AABB culling can be enabled/disabled by "BBCULL 1/0".
 For the teapot, the non-culled render took 118 seconds, the culled 102 seconds The cow, a more complex model,
